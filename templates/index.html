@@ -64,6 +64,12 @@
             border-radius: 20px;
             color: #495057;
         }
+        .card-header.bg-primary {
+            background: #007bff !important;
+        }
+        .card {
+            border-radius: 10px;
+        }
     </style>
 </head>
 <body>
@@ -76,6 +82,8 @@
                 <div class="stat-item">📝 Total Posts: <span id="totalPosts">0</span></div>
             </div>
             <button id="startButton" class="btn btn-primary mt-3 mb-3">Start Fetching</button>
+            <button id="analyzeButton" class="btn btn-success mt-3 mb-3" disabled>Generate Analysis</button>
+            <div id="analyzeInfoMsg" class="text-danger mb-2" style="display:none;"></div>
             <div id="timer" class="h4 mt-3">Ready to start</div>
             <div id="status" class="status-message text-muted"></div>
         </div>
@@ -83,6 +91,46 @@
         <div id="results">
             <h3 class="mb-4">Fetched Posts</h3>
             <div id="postsList"></div>
+        </div>
+
+        <div id="analysis" class="mt-5">
+            <h3 class="mb-4">Analysis Results</h3>
+            <div id="analysisResults" class="row">
+                <div class="col-12">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">Daily Statistics</h5>
+                        </div>
+                        <div class="card-body" id="graphsContainer">
+                            <div class="text-center text-muted">No graphs available yet</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">Top Posts Per Day</h5>
+                        </div>
+                        <div class="card-body" id="topsContainer">
+                            <div class="text-center text-muted">No top posts available yet</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">LLM Daily Summary</h5>
+                        </div>
+                        <div class="card-body" id="llmSummaryContainer">
+                            <div class="text-center text-muted">No summary available yet</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -93,8 +141,10 @@
         const apiCalls = document.getElementById('apiCalls');
         const totalPosts = document.getElementById('totalPosts');
         const startButton = document.getElementById('startButton');
+        const analyzeButton = document.getElementById('analyzeButton');
         let countdownInterval;
         let isFetching = false;
+        let analysisGenerated = false;
 
         function updateTimer(seconds) {
             if (seconds <= 0) {
@@ -154,12 +204,24 @@
                     if (data.status === 'success') {
                         if (data.new_posts > 0) {
                             status.textContent = `✅ Fetched ${data.new_posts} new posts`;
+                            loadData();
+                            // Enable analyze button after new fetch
+                            analyzeButton.disabled = false;
+                            analyzeButton.textContent = 'Generate Analysis';
+                            analysisGenerated = false;
+                            // Hide info message if present
+                            document.getElementById('analyzeInfoMsg').style.display = 'none';
                         } else {
                             status.textContent = 'ℹ️ No new posts found since last fetch';
+                            // Disable analyze button and show info message
+                            analyzeButton.disabled = true;
+                            analyzeButton.textContent = 'Generate Analysis';
+                            let infoMsg = document.getElementById('analyzeInfoMsg');
+                            infoMsg.style.display = 'block';
+                            infoMsg.textContent = 'No new posts to analyze. Please wait for new data.';
                         }
                         apiCalls.textContent = data.fetch_count;
                         startCountdown(60);
-                        loadData();
                     } else {
                         status.textContent = '❌ Error: ' + data.message;
                     }
@@ -202,11 +264,90 @@
             }
         }
 
+        function displayAnalysis(analysis) {
+            if (!analysis || analysis.error) {
+                return;
+            }
+
+            // Display graphs
+            const graphsContainer = document.getElementById('graphsContainer');
+            if (analysis.graphs) {
+                graphsContainer.innerHTML = Object.entries(analysis.graphs)
+                    .map(([title, base64]) => `
+                        <div class="mb-4">
+                            <h6 class="mb-2">${title}</h6>
+                            <img src="data:image/png;base64,${base64}" class="img-fluid" alt="${title}">
+                        </div>
+                    `).join('');
+            }
+
+            // Display top posts per day
+            const topsContainer = document.getElementById('topsContainer');
+            if (analysis.daily_tops) {
+                topsContainer.innerHTML = Object.entries(analysis.daily_tops)
+                    .map(([date, tops]) => `
+                        <div class="mb-4">
+                            <h6 class="mb-2">${date}</h6>
+                            <div>
+                                <strong>Most Upvoted Post:</strong> "${tops.most_upvoted.title}" (${tops.most_upvoted.upvotes} upvotes)<br>
+                                <strong>Most Commented Post:</strong> "${tops.most_commented.title}" (${tops.most_commented.comments} comments)
+                            </div>
+                        </div>
+                    `).join('');
+            }
+
+            // Display LLM summaries
+            const llmSummaryContainer = document.getElementById('llmSummaryContainer');
+            if (analysis.summaries) {
+                llmSummaryContainer.innerHTML = Object.entries(analysis.summaries)
+                    .map(([date, summary]) => `
+                        <div class="card mb-3 shadow-sm">
+                            <div class="card-header bg-primary text-white">
+                                <h6 class="mb-0">${date}</h6>
+                            </div>
+                            <div class="card-body">
+                                <p><strong>Key Topics:</strong> ${summary.key_topics_and_discussions || '<span class="text-muted">None</span>'}</p>
+                                <p><strong>Hot Issues:</strong> ${summary.hot_rising_issues || '<span class="text-muted">None</span>'}</p>
+                                <p><strong>User Sentiments:</strong> ${summary.user_sentiments || '<span class="text-muted">None</span>'}</p>
+                                <p><strong>Recurring Questions:</strong> ${summary.recurring_questions_or_concerns || '<span class="text-muted">None</span>'}</p>
+                                <p><strong>Community Trends:</strong> ${summary.community_behavior_or_notable_trends || '<span class="text-muted">None</span>'}</p>
+                                <p><strong>Additional Notes:</strong> ${summary.anything_else_worth_mentioning || '<span class="text-muted">None</span>'}</p>
+                            </div>
+                        </div>
+                    `).join('');
+            }
+        }
+
+        function loadAnalysis() {
+            fetch('/api/analysis')
+                .then(response => response.json())
+                .then(data => {
+                    displayAnalysis(data);
+                    // Disable analyze button after generating analysis
+                    analyzeButton.disabled = true;
+                    analyzeButton.textContent = 'Analysis Generated';
+                    analysisGenerated = true;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    status.textContent = 'Error loading analysis';
+                });
+        }
+
         // Start button click handler
         startButton.addEventListener('click', () => {
             startButton.disabled = true;
             startButton.textContent = 'Fetching...';
             fetchData();
+        });
+
+        // Analyze button click handler
+        analyzeButton.addEventListener('click', () => {
+            if (!analysisGenerated) {
+                analyzeButton.disabled = true;
+                analyzeButton.textContent = 'Generating Analysis...';
+                loadAnalysis();
+            }
         });
 
         // Initial load of existing data

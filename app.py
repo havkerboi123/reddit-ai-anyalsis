@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import json
 import time
 import os
+from proceess_results import process_new_data
 
 app = Flask(__name__)
 
@@ -35,6 +36,11 @@ def save_data(data):
     """Save data to JSON file"""
     with open("r_giki_last10.json", "w", encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4, default=str)
+
+def save_analysis(analysis_data):
+    """Save analysis results to JSON file"""
+    with open("analysis_results.json", "w", encoding='utf-8') as f:
+        json.dump(analysis_data, f, ensure_ascii=False, indent=4, default=str)
 
 @app.route('/')
 def index():
@@ -90,6 +96,10 @@ def trigger_api():
         if new_posts:
             results.extend(new_posts)
             save_data(results)
+            
+            # Process new data and generate graphs
+            graphs = process_new_data(results)  # Pass all results, not just new posts
+            save_analysis(graphs)
         
         # Update timing
         last_api_call = time.time()
@@ -116,6 +126,15 @@ def trigger_api():
 def get_data():
     """Get all fetched data"""
     return jsonify(load_data())
+
+@app.route('/api/analysis')
+def get_analysis():
+    """Get the latest analysis results"""
+    try:
+        with open("analysis_results.json", "r", encoding='utf-8') as f:
+            return jsonify(json.load(f))
+    except FileNotFoundError:
+        return jsonify({"error": "No analysis results available yet"})
 
 @app.route('/api/status')
 def get_status():
